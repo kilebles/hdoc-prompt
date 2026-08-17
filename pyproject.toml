@@ -1,0 +1,41 @@
+[project]
+name = "hdoc-prompts"
+version = "0.1.0"
+description = "Telegram bot (aiogram 3, polling, layered architecture)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiogram>=3.15,<4.0",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "cachetools>=5.5",
+    "loguru>=0.7",
+    "google-genai>=2.17.0",
+    "python-docx>=1.2.0",
+    "openpyxl>=3.1.5",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "types-openpyxl>=3.1.5.20260807",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+explicit_package_bases = true
+namespace_packages = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bot"]
