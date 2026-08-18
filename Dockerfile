@@ -15,7 +15,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-install-project --no-dev
 
 COPY src ./src
-COPY main.py ./
+COPY main.py README.md ./
 RUN uv sync --frozen --no-dev
 
 FROM python:3.12-slim AS runtime

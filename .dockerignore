@@ -5,7 +5,6 @@ __pycache__
 .env
 .env.*
 !.env.example
-README.md
 *.docx
 .dockerignore
 Dockerfile
