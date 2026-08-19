@@ -47,6 +47,11 @@ I2V_GENERATION_MODELS: list[tuple[str, str]] = [
     ("gemini-2.5-flash", "Flash ($2.50)"),
     ("gemini-2.5-pro", "Pro ($10)"),
     ("gemini-3.6-flash", "3.6 Flash ($7.50)"),
+    ("gpt-5-nano", "GPT-5 Nano ($0.40)"),
+    ("gpt-5.6-luna", "GPT-5.6 Luna ($1.20)"),
+    ("gpt-4.1-mini", "GPT-4.1 Mini ($1.60)"),
+    ("gpt-5-mini", "GPT-5 Mini ($2)"),
+    ("gpt-5.6-terra", "GPT-5.6 Terra ($12)"),
 ]
 
 

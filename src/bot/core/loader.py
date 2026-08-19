@@ -13,7 +13,12 @@ from bot.services.album_collector_service import (
     AlbumCollectorService,
     DebounceAlbumCollectorService,
 )
-from bot.services.i2v_generation_service import GeminiI2VGenerationService, I2VGenerationService
+from bot.services.i2v_generation_service import (
+    GeminiI2VGenerationService,
+    I2VGenerationService,
+    OpenAII2VGenerationService,
+    RoutingI2VGenerationService,
+)
 from bot.services.prompt_parser_service import GeminiPromptParserService, PromptParserService
 from bot.services.prompt_storage_service import FilePromptStorageService, PromptStorageService
 from bot.services.scenario_parser_service import (
@@ -57,7 +62,10 @@ def build_dispatcher(
         or FilePromptStorageService(PROMPTS_DATA_DIR),
         scenario_parser_service=scenario_parser_service or ScenarioParserServiceImpl(),
         i2v_generation_service=i2v_generation_service
-        or GeminiI2VGenerationService(settings.google_ai),
+        or RoutingI2VGenerationService(
+            gemini=GeminiI2VGenerationService(settings.google_ai),
+            openai=OpenAII2VGenerationService(settings.openai),
+        ),
         xlsx_export_service=xlsx_export_service or XlsxExportServiceImpl(),
         album_collector_service=album_collector_service or DebounceAlbumCollectorService(),
     )
