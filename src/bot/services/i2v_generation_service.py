@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol, cast
 
@@ -47,31 +48,59 @@ async def _run_generation(
     on_progress: ProgressCallback | None,
     generate_paragraph: Callable[[str, str, str, int], Awaitable[ParagraphResponse]],
     update_summary: Callable[[str, str], Awaitable[str]],
+    max_concurrency: int = 1,
 ) -> list[GeneratedPair]:
-    """Shared sequential, rolling-summary generation loop.
+    """Shared rolling-summary generation, in two phases.
 
-    Paragraphs are processed one at a time (not in parallel) because each
-    paragraph's prompt depends on a summary of everything generated so far —
-    the scenario must read as one continuous story, not disconnected shots.
+    Phase 1 walks the paragraphs strictly in order to build the rolling
+    summary, since each summary step depends on the previous one — the
+    scenario must read as one continuous story, not disconnected shots.
+    Crucially, a summary step only ever needs the *previous summary* and
+    *this paragraph's raw text*, never the generated image/video pairs, so
+    this phase is fast and fully decoupled from phase 2.
+
+    Phase 2 generates the image/video pairs for every paragraph — each one
+    already knows its story-so-far from phase 1, so these (much slower)
+    calls have no ordering dependency on each other and run concurrently,
+    bounded by `max_concurrency` to respect the backend's rate limits.
+
     Era selection, style suffixes, and negative constraints are all resolved
     in code (see i2v_prompt_builder) rather than left to the model.
     """
     system_prompt = build_system_prompt(template, pairs)
-    results: list[GeneratedPair] = []
-    story_so_far = ""
-    previous_paragraph_text = ""
 
-    for i, paragraph_text in enumerate(paragraphs, start=1):
+    story_so_far_before: list[str] = []
+    story_so_far = ""
+    for paragraph_text in paragraphs:
+        story_so_far_before.append(story_so_far)
+        story_so_far = await update_summary(story_so_far, paragraph_text)
+
+    semaphore = asyncio.Semaphore(max_concurrency)
+    completed = 0
+    progress_lock = asyncio.Lock()
+
+    async def process(index: int, paragraph_text: str) -> list[GeneratedPair]:
+        nonlocal completed
         matched_period = match_sub_period(paragraph_text, template.sub_periods)
+        previous_paragraph_text = paragraphs[index - 1] if index > 0 else ""
         user_prompt = build_user_prompt(
-            i, paragraph_text, previous_paragraph_text, story_so_far, matched_period
+            index + 1,
+            paragraph_text,
+            previous_paragraph_text,
+            story_so_far_before[index],
+            matched_period,
         )
-        parsed = await generate_paragraph(system_prompt, user_prompt, paragraph_text, len(pairs))
+        async with semaphore:
+            parsed = await generate_paragraph(
+                system_prompt, user_prompt, paragraph_text, len(pairs)
+            )
+
+        pairs_for_paragraph: list[GeneratedPair] = []
         for position, item in enumerate(parsed.pairs[: len(pairs)], start=1):
             final_item = apply_deterministic_suffixes(item, template)
-            results.append(
+            pairs_for_paragraph.append(
                 GeneratedPair(
-                    paragraph_number=i,
+                    paragraph_number=index + 1,
                     pair_number=position,
                     img=final_item.img,
                     vid=final_item.vid,
@@ -80,20 +109,33 @@ async def _run_generation(
                 )
             )
 
-        story_so_far = await update_summary(story_so_far, paragraph_text)
-        previous_paragraph_text = paragraph_text
-
         if on_progress is not None:
-            await on_progress(i, len(paragraphs))
+            async with progress_lock:
+                completed += 1
+                await on_progress(completed, len(paragraphs))
 
-    return results
+        return pairs_for_paragraph
+
+    # asyncio.gather preserves input order in its result list regardless of
+    # completion order, so the final flattened list stays paragraph-ordered.
+    grouped = await asyncio.gather(
+        *(process(i, paragraph_text) for i, paragraph_text in enumerate(paragraphs))
+    )
+    return [pair for group in grouped for pair in group]
 
 
 class GeminiI2VGenerationService:
-    """Sequential i2v generation via the Gemini Developer API."""
+    """i2v generation via the Gemini Developer API.
 
-    def __init__(self, settings: GoogleAISettings) -> None:
+    Runs pair-generation calls concurrently (see `_run_generation`), bounded
+    by `max_concurrency`. Default of 6 is conservative against the paid-tier
+    1 quota (1000 RPM / 1M input TPM per model) — plenty of headroom, raise
+    it if the quota page shows more room.
+    """
+
+    def __init__(self, settings: GoogleAISettings, max_concurrency: int = 6) -> None:
         self._client = genai.Client(api_key=settings.api_key.get_secret_value())
+        self._max_concurrency = max_concurrency
 
     async def generate(
         self,
@@ -120,6 +162,7 @@ class GeminiI2VGenerationService:
             on_progress=on_progress,
             generate_paragraph=generate_paragraph,
             update_summary=update_summary,
+            max_concurrency=self._max_concurrency,
         )
 
     async def _generate_paragraph(
@@ -190,10 +233,19 @@ def _temperature_for(model: str, value: float) -> float | Omit:
 
 
 class OpenAII2VGenerationService:
-    """Sequential i2v generation via the OpenAI API (chat completions, structured output)."""
+    """i2v generation via the OpenAI API (chat completions, structured output).
 
-    def __init__(self, settings: OpenAISettings) -> None:
+    Runs pair-generation calls concurrently (see `_run_generation`), bounded
+    by `max_concurrency`. Default of 6 is conservative against the account's
+    usage tier 1 quota for gpt-5-nano (500 RPM / 200,000 TPM per model) —
+    per-request token usage here is small enough that this leaves plenty of
+    headroom; re-check platform.openai.com/settings/organization/limits and
+    raise it if the account tier changes.
+    """
+
+    def __init__(self, settings: OpenAISettings, max_concurrency: int = 6) -> None:
         self._client = AsyncOpenAI(api_key=settings.api_key.get_secret_value())
+        self._max_concurrency = max_concurrency
 
     async def generate(
         self,
@@ -220,6 +272,7 @@ class OpenAII2VGenerationService:
             on_progress=on_progress,
             generate_paragraph=generate_paragraph,
             update_summary=update_summary,
+            max_concurrency=self._max_concurrency,
         )
 
     async def _generate_paragraph(
