@@ -12,16 +12,18 @@ class AlbumCollectorService(Protocol):
 
     Telegram delivers each file in an album as a separate Message update, all
     carrying the same media_group_id, with no explicit "this is the last one"
-    marker. Unlike free-form pasted text (where gaps between parts are
-    unpredictable), album parts are sent by Telegram itself in a tight burst,
-    so a short fixed delay reliably signals "no more parts coming".
+    marker. Gaps between parts of the same album can occasionally run into
+    several seconds (observed: 3 files arriving ~30s apart via polling), so
+    the debounce delay must be generous — too short and the first part fires
+    on its own, and since the handler clears FSM state once it settles, any
+    later part of the same album arrives with no matching state to land in.
     """
 
     def add(self, media_group_id: str, message: Message, on_settled: AlbumCallback) -> None: ...
 
 
 class DebounceAlbumCollectorService:
-    def __init__(self, delay_seconds: float = 0.7) -> None:
+    def __init__(self, delay_seconds: float = 3.0) -> None:
         self._delay = delay_seconds
         self._buffers: dict[str, list[Message]] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
