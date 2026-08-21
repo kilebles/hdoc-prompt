@@ -8,4 +8,5 @@ class GeneratedPair(BaseModel):
     pair_number: int
     img: str
     vid: str
+    stock_query: str
     paragraph_text: str

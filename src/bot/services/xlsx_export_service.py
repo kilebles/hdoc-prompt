@@ -23,7 +23,8 @@ class XlsxExportServiceImpl:
         ws["A1"] = "number"
         ws["B1"] = "img_prompt"
         ws["C1"] = "vid_prompt"
-        ws["D1"] = "paragraph"
+        ws["D1"] = "stock_query"
+        ws["E1"] = "paragraph"
         for cell in ws[1]:
             cell.font = Font(bold=True)
 
@@ -31,12 +32,14 @@ class XlsxExportServiceImpl:
             ws[f"A{row_i}"] = f"{pair.paragraph_number}.{pair.pair_number}"
             ws[f"B{row_i}"] = pair.img
             ws[f"C{row_i}"] = pair.vid
-            ws[f"D{row_i}"] = pair.paragraph_text
+            ws[f"D{row_i}"] = pair.stock_query
+            ws[f"E{row_i}"] = pair.paragraph_text
 
         ws.column_dimensions["A"].width = 8
         ws.column_dimensions["B"].width = 60
         ws.column_dimensions["C"].width = 60
-        ws.column_dimensions["D"].width = 80
+        ws.column_dimensions["D"].width = 30
+        ws.column_dimensions["E"].width = 80
 
         buffer = BytesIO()
         wb.save(buffer)

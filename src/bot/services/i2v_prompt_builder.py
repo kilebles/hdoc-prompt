@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from bot.models.prompt import I2VPrompt, Pair, SubPeriod
 
 MIN_PAIR_TEXT_LENGTH = 40
+MAX_STOCK_QUERY_WORDS = 6
 YEAR_PATTERN = re.compile(r"\b(1[0-9]{3}|20[0-9]{2})\b")
 
 SYSTEM_OVERRIDE = (
@@ -100,6 +101,17 @@ def build_system_prompt(template: I2VPrompt, pairs: list[Pair]) -> str:
         "paragraph, shot differently per that position's camera/frame/people "
         "guidance:\n" + "\n".join(variations)
     )
+    parts.append(
+        "STOCK QUERY: each item also needs a \"stock_query\" — a search query for a "
+        "stock photo/video site (Pixabay-style), for that SAME shot, as a fallback "
+        "when the generated image/video isn't usable. This is a completely different "
+        "register from img/vid: 2-4 plain English keywords, subject first, no camera "
+        "terms, no lighting/mood/artistic language, no full sentences. Generalize away "
+        "anything a stock library won't have footage of — specific names, exact years, "
+        "invented places — down to the closest generic visual category (e.g. "
+        "\"Ivan IV coronation 1547\" -> \"medieval king coronation\", not the literal "
+        "specifics)."
+    )
 
     return "\n\n".join(parts)
 
@@ -136,6 +148,7 @@ def build_user_prompt(
 class PairResponseItem(BaseModel):
     img: str
     vid: str
+    stock_query: str = ""
 
 
 class ParagraphResponse(BaseModel):
@@ -160,8 +173,9 @@ def paragraph_response_schema(pair_count: int) -> dict[str, object]:
                     "properties": {
                         "img": {"type": "string"},
                         "vid": {"type": "string"},
+                        "stock_query": {"type": "string"},
                     },
-                    "required": ["img", "vid"],
+                    "required": ["img", "vid", "stock_query"],
                     "additionalProperties": False,
                 },
             },
@@ -182,6 +196,14 @@ def validate_pairs(paragraph_text: str, items: list[PairResponseItem]) -> str | 
             return f"variation {i} image prompt is too short/empty ({len(item.img)} chars)"
         if len(item.vid.strip()) < MIN_PAIR_TEXT_LENGTH:
             return f"variation {i} video prompt is too short/empty ({len(item.vid)} chars)"
+        stock_words = item.stock_query.strip().split()
+        if not stock_words:
+            return f"variation {i} stock query is empty"
+        if len(stock_words) > MAX_STOCK_QUERY_WORDS:
+            return (
+                f"variation {i} stock query has {len(stock_words)} words "
+                f"({item.stock_query!r}), must be a short keyword search, not a sentence"
+            )
 
     paragraph_years = set(YEAR_PATTERN.findall(paragraph_text))
     if not paragraph_years:
@@ -213,7 +235,7 @@ def apply_deterministic_suffixes(item: PairResponseItem, template: I2VPrompt) ->
         img = f"{img}. Avoid: {template.deterministic.negatives}"
         vid = f"{vid}. Avoid: {template.deterministic.negatives}"
 
-    return PairResponseItem(img=img, vid=vid)
+    return PairResponseItem(img=img, vid=vid, stock_query=item.stock_query.strip())
 
 
 SUMMARY_INSTRUCTION = (

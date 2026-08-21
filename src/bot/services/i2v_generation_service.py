@@ -75,6 +75,7 @@ async def _run_generation(
                     pair_number=position,
                     img=final_item.img,
                     vid=final_item.vid,
+                    stock_query=final_item.stock_query,
                     paragraph_text=paragraph_text,
                 )
             )
