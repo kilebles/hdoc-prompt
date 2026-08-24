@@ -21,7 +21,7 @@ from bot.services.i2v_prompt_builder import (
     match_sub_period,
     paragraph_response_schema,
     summary_response_schema,
-    validate_pairs,
+    validate_paragraph_response,
 )
 
 ProgressCallback = Callable[[int, int], Awaitable[None]]
@@ -104,7 +104,7 @@ async def _run_generation(
                     pair_number=position,
                     img=final_item.img,
                     vid=final_item.vid,
-                    stock_query=final_item.stock_query,
+                    stock_queries=parsed.stock_queries,
                     paragraph_text=paragraph_text,
                 )
             )
@@ -187,7 +187,7 @@ class GeminiI2VGenerationService:
             )
             parsed = ParagraphResponse.model_validate_json(response.text or "{}")
 
-            problem = validate_pairs(paragraph_text, parsed.pairs)
+            problem = validate_paragraph_response(paragraph_text, parsed)
             if problem is None:
                 return parsed
 
@@ -311,7 +311,7 @@ class OpenAII2VGenerationService:
             content = response.choices[0].message.content or "{}"
             parsed = ParagraphResponse.model_validate_json(content)
 
-            problem = validate_pairs(paragraph_text, parsed.pairs)
+            problem = validate_paragraph_response(paragraph_text, parsed)
             if problem is None:
                 return parsed
 

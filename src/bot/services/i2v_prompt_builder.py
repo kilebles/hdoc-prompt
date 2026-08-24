@@ -12,6 +12,7 @@ from bot.models.prompt import I2VPrompt, Pair, SubPeriod
 
 MIN_PAIR_TEXT_LENGTH = 40
 MAX_STOCK_QUERY_WORDS = 6
+STOCK_QUERY_COUNT = 3
 YEAR_PATTERN = re.compile(r"\b(1[0-9]{3}|20[0-9]{2})\b")
 
 SYSTEM_OVERRIDE = (
@@ -102,15 +103,35 @@ def build_system_prompt(template: I2VPrompt, pairs: list[Pair]) -> str:
         "guidance:\n" + "\n".join(variations)
     )
     parts.append(
-        "STOCK QUERY: each item also needs a \"stock_query\" — a search query for a "
-        "stock photo/video site (Pixabay-style), for that SAME shot, as a fallback "
-        "when the generated image/video isn't usable. This is a completely different "
-        "register from img/vid: 2-4 plain English keywords, subject first, no camera "
-        "terms, no lighting/mood/artistic language, no full sentences. Generalize away "
-        "anything a stock library won't have footage of — specific names, exact years, "
-        "invented places — down to the closest generic visual category (e.g. "
-        "\"Ivan IV coronation 1547\" -> \"medieval king coronation\", not the literal "
-        "specifics)."
+        f"STOCK QUERIES: separately from the pairs, also return \"stock_queries\" — "
+        f"exactly {STOCK_QUERY_COUNT} search queries for a stock photo/video site "
+        "(Pixabay-style), as a fallback for illustrating THIS PARAGRAPH as a whole "
+        "when the generated images/videos aren't usable. Completely different "
+        "register from img/vid: 2-4 plain English keywords each, subject first, no "
+        "camera terms, no lighting/mood/artistic language, no full sentences.\n"
+        "Stock libraries are photo/footage archives, not illustration generators — "
+        "they have real coverage of tangible OBJECTS, ARTIFACTS, COSTUMES, "
+        "ARCHITECTURE, and SETTINGS, but almost never real photos of specific "
+        "historical EVENTS or ACTIONS (a coronation ceremony, a battle, a march — "
+        "those searches mostly return illustrations, paintings, and AI-generated "
+        "art instead of the intended photographic fallback). So bias all "
+        f"{STOCK_QUERY_COUNT} queries toward concrete, photographable nouns from the "
+        "paragraph — objects, clothing/armor, tools, buildings, interiors, "
+        "landscapes, materials — each query a different one of these, rather than "
+        "framing any of them as an event or action.\n"
+        "Every query must stay doubly relevant: (1) to what THIS PARAGRAPH actually "
+        "describes — real objects/settings it mentions or implies, not a generic "
+        "stand-in — and (2) to the era/setting given for this paragraph (see ERA FOR "
+        "THIS PARAGRAPH in the user message) and to the scenario's overall "
+        "lore/time period, so a search on a stock site returns visuals from the "
+        "right time and place, not modern-looking stock photos. Bake the era/"
+        "setting into the keywords themselves rather than leaving them purely "
+        "modern-generic — e.g. for a paragraph about Ivan IV's coronation in 1547, "
+        "prefer \"medieval Russian crown\", \"medieval throne room\", \"medieval "
+        "tsar robe\" over an event framing like \"king coronation ceremony\". "
+        "Generalize away anything a stock library won't have footage of — specific "
+        "names, exact years, invented places — down to the closest generic visual "
+        "category, but never generalize away the era or setting itself."
     )
 
     return "\n\n".join(parts)
@@ -133,7 +154,8 @@ def build_user_prompt(
         parts.append(
             f"ERA FOR THIS PARAGRAPH (already determined, do not second-guess it): "
             f"{matched_period.title} ({matched_period.when}). Open the image prompt by "
-            f"declaring this era, then match material culture, dress, and setting to it."
+            f"declaring this era, then match material culture, dress, and setting to it "
+            "— and bake this same era into the stock_queries too."
         )
     else:
         parts.append(
@@ -148,11 +170,11 @@ def build_user_prompt(
 class PairResponseItem(BaseModel):
     img: str
     vid: str
-    stock_query: str = ""
 
 
 class ParagraphResponse(BaseModel):
     pairs: list[PairResponseItem] = Field(default_factory=list)
+    stock_queries: list[str] = Field(default_factory=list)
 
 
 def paragraph_response_schema(pair_count: int) -> dict[str, object]:
@@ -173,14 +195,19 @@ def paragraph_response_schema(pair_count: int) -> dict[str, object]:
                     "properties": {
                         "img": {"type": "string"},
                         "vid": {"type": "string"},
-                        "stock_query": {"type": "string"},
                     },
-                    "required": ["img", "vid", "stock_query"],
+                    "required": ["img", "vid"],
                     "additionalProperties": False,
                 },
             },
+            "stock_queries": {
+                "type": "array",
+                "minItems": STOCK_QUERY_COUNT,
+                "maxItems": STOCK_QUERY_COUNT,
+                "items": {"type": "string"},
+            },
         },
-        "required": ["pairs"],
+        "required": ["pairs", "stock_queries"],
         "additionalProperties": False,
     }
 
@@ -189,20 +216,28 @@ class SummaryResponse(BaseModel):
     summary: str = ""
 
 
-def validate_pairs(paragraph_text: str, items: list[PairResponseItem]) -> str | None:
+def validate_paragraph_response(paragraph_text: str, response: ParagraphResponse) -> str | None:
     """Returns a human-readable problem description, or None if the response looks sound."""
+    items = response.pairs
     for i, item in enumerate(items, start=1):
         if len(item.img.strip()) < MIN_PAIR_TEXT_LENGTH:
             return f"variation {i} image prompt is too short/empty ({len(item.img)} chars)"
         if len(item.vid.strip()) < MIN_PAIR_TEXT_LENGTH:
             return f"variation {i} video prompt is too short/empty ({len(item.vid)} chars)"
-        stock_words = item.stock_query.strip().split()
+
+    if len(response.stock_queries) != STOCK_QUERY_COUNT:
+        return (
+            f"expected exactly {STOCK_QUERY_COUNT} stock_queries, got "
+            f"{len(response.stock_queries)}"
+        )
+    for i, query in enumerate(response.stock_queries, start=1):
+        stock_words = query.strip().split()
         if not stock_words:
-            return f"variation {i} stock query is empty"
+            return f"stock query {i} is empty"
         if len(stock_words) > MAX_STOCK_QUERY_WORDS:
             return (
-                f"variation {i} stock query has {len(stock_words)} words "
-                f"({item.stock_query!r}), must be a short keyword search, not a sentence"
+                f"stock query {i} has {len(stock_words)} words ({query!r}), must be a "
+                "short keyword search, not a sentence"
             )
 
     paragraph_years = set(YEAR_PATTERN.findall(paragraph_text))
@@ -235,7 +270,7 @@ def apply_deterministic_suffixes(item: PairResponseItem, template: I2VPrompt) ->
         img = f"{img}. Avoid: {template.deterministic.negatives}"
         vid = f"{vid}. Avoid: {template.deterministic.negatives}"
 
-    return PairResponseItem(img=img, vid=vid, stock_query=item.stock_query.strip())
+    return PairResponseItem(img=img, vid=vid)
 
 
 SUMMARY_INSTRUCTION = (
