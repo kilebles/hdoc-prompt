@@ -34,8 +34,12 @@ class XlsxExportServiceImpl:
             ws[f"A{row_i}"] = f"{pair.paragraph_number}.{pair.pair_number}"
             ws[f"B{row_i}"] = pair.img
             ws[f"C{row_i}"] = pair.vid
-            for col, query in zip("DEF", pair.stock_queries, strict=False):
-                ws[f"{col}{row_i}"] = query
+            # stock_queries are per-paragraph, not per-pair — repeating the same
+            # 3 values on every pair row of a paragraph reads as a data error, so
+            # only the paragraph's first pair row carries them.
+            if pair.pair_number == 1:
+                for col, query in zip("DEF", pair.stock_queries, strict=False):
+                    ws[f"{col}{row_i}"] = query
             ws[f"G{row_i}"] = pair.paragraph_text
 
         ws.column_dimensions["A"].width = 8

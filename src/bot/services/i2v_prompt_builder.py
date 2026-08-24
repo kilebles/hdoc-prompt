@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from bot.models.prompt import I2VPrompt, Pair, SubPeriod
 
 MIN_PAIR_TEXT_LENGTH = 40
+MIN_STOCK_QUERY_WORDS = 3
 MAX_STOCK_QUERY_WORDS = 6
 STOCK_QUERY_COUNT = 3
 YEAR_PATTERN = re.compile(r"\b(1[0-9]{3}|20[0-9]{2})\b")
@@ -105,33 +106,41 @@ def build_system_prompt(template: I2VPrompt, pairs: list[Pair]) -> str:
     parts.append(
         f"STOCK QUERIES: separately from the pairs, also return \"stock_queries\" — "
         f"exactly {STOCK_QUERY_COUNT} search queries for a stock photo/video site "
-        "(Pixabay-style), as a fallback for illustrating THIS PARAGRAPH as a whole "
-        "when the generated images/videos aren't usable. Completely different "
-        "register from img/vid: 2-4 plain English keywords each, subject first, no "
-        "camera terms, no lighting/mood/artistic language, no full sentences.\n"
-        "Stock libraries are photo/footage archives, not illustration generators — "
-        "they have real coverage of tangible OBJECTS, ARTIFACTS, COSTUMES, "
-        "ARCHITECTURE, and SETTINGS, but almost never real photos of specific "
-        "historical EVENTS or ACTIONS (a coronation ceremony, a battle, a march — "
-        "those searches mostly return illustrations, paintings, and AI-generated "
-        "art instead of the intended photographic fallback). So bias all "
-        f"{STOCK_QUERY_COUNT} queries toward concrete, photographable nouns from the "
-        "paragraph — objects, clothing/armor, tools, buildings, interiors, "
-        "landscapes, materials — each query a different one of these, rather than "
-        "framing any of them as an event or action.\n"
-        "Every query must stay doubly relevant: (1) to what THIS PARAGRAPH actually "
-        "describes — real objects/settings it mentions or implies, not a generic "
-        "stand-in — and (2) to the era/setting given for this paragraph (see ERA FOR "
-        "THIS PARAGRAPH in the user message) and to the scenario's overall "
-        "lore/time period, so a search on a stock site returns visuals from the "
-        "right time and place, not modern-looking stock photos. Bake the era/"
-        "setting into the keywords themselves rather than leaving them purely "
-        "modern-generic — e.g. for a paragraph about Ivan IV's coronation in 1547, "
-        "prefer \"medieval Russian crown\", \"medieval throne room\", \"medieval "
-        "tsar robe\" over an event framing like \"king coronation ceremony\". "
-        "Generalize away anything a stock library won't have footage of — specific "
-        "names, exact years, invented places — down to the closest generic visual "
-        "category, but never generalize away the era or setting itself."
+        "(Pixabay-style), for THIS PARAGRAPH as a whole.\n"
+        "Purpose — read this carefully, it drives what makes a good query here: "
+        "the img/vid prompts above are for AI generation, which is inherently "
+        "synthetic and can look fabricated. The stock_queries exist to pull in the "
+        "opposite kind of material — real, physically-existing documentation of "
+        "this culture and era that grounds the piece in fact and that an AI "
+        "generator can't convincingly imitate: genuine period artifacts, tools, "
+        "garments and regalia, dwellings and structures, written records or "
+        "documents, or real archival/museum photographs tied to the specific "
+        "named culture/nation and era of this paragraph. Each of the 3 queries "
+        "should aim at a different one of these (e.g. one at a physical object or "
+        "artifact, one at clothing/material culture, one at a structure/setting or "
+        "archival photograph) — not 3 versions of the same generic scenery.\n"
+        "Register: plain English keywords, subject first, no camera terms, no "
+        "lighting/mood/artistic language, no full sentences.\n"
+        f"Length: {MIN_STOCK_QUERY_WORDS}-{MAX_STOCK_QUERY_WORDS} words each — a "
+        "bare 2-word query like \"desert plant\" is too thin to be findable or "
+        "targeted, it must read as a specific, searchable subject: pair the object "
+        "itself with a qualifier that narrows it down, such as the named culture/"
+        "nation, era/period, or material/craft (e.g. \"Apache woven water basket\", "
+        "\"19th century Native American beadwork\", \"adobe pueblo dwelling "
+        "Southwest\").\n"
+        "Every query must stay doubly relevant: (1) to what THIS PARAGRAPH "
+        "actually describes — real objects/artifacts/settings it mentions or "
+        "implies, not a generic stand-in — and (2) to the era/setting given for "
+        "this paragraph (see ERA FOR THIS PARAGRAPH in the user message) and to "
+        "the scenario's overall lore/time period, so a search on a stock site "
+        "returns visuals from the right time, place, and culture, not modern-"
+        "looking stock photos. Generalize away anything a stock library won't "
+        "have footage of — specific names, exact years, invented places — down to "
+        "the closest generic visual category, but never generalize away the era, "
+        "setting, or named culture itself, and never drop into event/action "
+        "framing (a ceremony, a battle, a march) — those searches mostly return "
+        "illustrations and AI-generated art instead of the real documentation "
+        "this is meant to provide."
     )
 
     return "\n\n".join(parts)
@@ -234,6 +243,13 @@ def validate_paragraph_response(paragraph_text: str, response: ParagraphResponse
         stock_words = query.strip().split()
         if not stock_words:
             return f"stock query {i} is empty"
+        if len(stock_words) < MIN_STOCK_QUERY_WORDS:
+            return (
+                f"stock query {i} has only {len(stock_words)} word(s) ({query!r}), "
+                f"too thin/generic to be findable — needs at least "
+                f"{MIN_STOCK_QUERY_WORDS} words (object + a culture/era/material "
+                "qualifier)"
+            )
         if len(stock_words) > MAX_STOCK_QUERY_WORDS:
             return (
                 f"stock query {i} has {len(stock_words)} words ({query!r}), must be a "
