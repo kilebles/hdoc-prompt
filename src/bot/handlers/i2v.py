@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
@@ -199,7 +201,8 @@ async def on_scenario_document(
     )
 
     workbook_bytes = xlsx_export_service.build_i2v_workbook(generated)
-    output_name = f"{prompt.data.title or 'i2v'}.xlsx"
+    input_stem = Path(document.file_name).stem
+    output_name = f"{input_stem or prompt.data.title or 'i2v'}.xlsx"
     logger.info(
         "i2v: generation complete rows={} file={!r} size={} bytes",
         len(generated),

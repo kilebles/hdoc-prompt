@@ -138,9 +138,12 @@ def build_system_prompt(template: I2VPrompt, pairs: list[Pair]) -> str:
         "have footage of — specific names, exact years, invented places — down to "
         "the closest generic visual category, but never generalize away the era, "
         "setting, or named culture itself, and never drop into event/action "
-        "framing (a ceremony, a battle, a march) — those searches mostly return "
-        "illustrations and AI-generated art instead of the real documentation "
-        "this is meant to provide."
+        "framing (a ceremony, a battle, a march) or abstract/conceptual framing "
+        "(\"survival knowledge\", \"cultural wisdom\", \"traditional skill\") — "
+        "neither has a physical form a camera can capture, so both searches mostly "
+        "return illustrations and AI-generated art instead of the real "
+        "documentation this is meant to provide. Every query must name a "
+        "tangible, physical thing."
     )
 
     return "\n\n".join(parts)
