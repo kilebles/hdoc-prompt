@@ -100,7 +100,6 @@ class GeminiPromptParserService:
             ),
         )
         parsed = I2VPrompt.model_validate_json(response.text or "{}")
-        parsed.title = _first_line(raw_text)
 
         # Number pairs by their extraction order rather than trusting the model
         # to read numbering out of the source text — the order is already
@@ -124,13 +123,6 @@ class GeminiPromptParserService:
             parsed.limits.video_max_chars = _DEFAULT_VIDEO_MAX_CHARS
 
         return parsed
-
-
-def _first_line(raw_text: str) -> str:
-    for line in raw_text.splitlines():
-        if line.strip():
-            return line.strip()
-    return ""
 
 
 def _slugify(text: str) -> str:

@@ -12,14 +12,19 @@ from bot.config import GoogleAISettings, OpenAISettings
 from bot.models.i2v_generation import GeneratedPair
 from bot.models.prompt import I2VPrompt, Pair
 from bot.services.i2v_prompt_builder import (
+    ExtractedSubject,
     ParagraphResponse,
+    SubjectExtractionResponse,
     SummaryResponse,
     apply_deterministic_suffixes,
+    build_stock_queries_by_paragraph,
+    build_subject_extraction_prompt,
     build_summary_prompt,
     build_system_prompt,
     build_user_prompt,
     match_sub_period,
     paragraph_response_schema,
+    subject_extraction_schema,
     summary_response_schema,
     validate_paragraph_response,
 )
@@ -48,6 +53,7 @@ async def _run_generation(
     on_progress: ProgressCallback | None,
     generate_paragraph: Callable[[str, str, str, int], Awaitable[ParagraphResponse]],
     update_summary: Callable[[str, str], Awaitable[str]],
+    extract_subjects: Callable[[list[str]], Awaitable[list[ExtractedSubject]]],
     max_concurrency: int = 1,
 ) -> list[GeneratedPair]:
     """Shared rolling-summary generation, in two phases.
@@ -57,23 +63,38 @@ async def _run_generation(
     scenario must read as one continuous story, not disconnected shots.
     Crucially, a summary step only ever needs the *previous summary* and
     *this paragraph's raw text*, never the generated image/video pairs, so
-    this phase is fast and fully decoupled from phase 2.
+    this phase is fast and fully decoupled from phase 2. Stock-photo subject
+    extraction reads the whole scenario in one shot and has no dependency on
+    the summary either, so it runs concurrently alongside phase 1.
 
     Phase 2 generates the image/video pairs for every paragraph — each one
     already knows its story-so-far from phase 1, so these (much slower)
     calls have no ordering dependency on each other and run concurrently,
-    bounded by `max_concurrency` to respect the backend's rate limits.
+    bounded by `max_concurrency` to respect the backend's rate limits. Stock
+    queries are attached from the phase-1 extraction result rather than
+    generated per paragraph — asking the model to invent exactly N stock
+    queries per paragraph, whether or not the paragraph actually describes N
+    concrete things, was what produced generic/irrelevant queries.
 
     Era selection, style suffixes, and negative constraints are all resolved
     in code (see i2v_prompt_builder) rather than left to the model.
     """
     system_prompt = build_system_prompt(template, pairs)
 
-    story_so_far_before: list[str] = []
-    story_so_far = ""
-    for paragraph_text in paragraphs:
-        story_so_far_before.append(story_so_far)
-        story_so_far = await update_summary(story_so_far, paragraph_text)
+    async def build_summaries() -> list[str]:
+        story_so_far_before: list[str] = []
+        story_so_far = ""
+        for paragraph_text in paragraphs:
+            story_so_far_before.append(story_so_far)
+            story_so_far = await update_summary(story_so_far, paragraph_text)
+        return story_so_far_before
+
+    story_so_far_before, subjects = await asyncio.gather(
+        build_summaries(), extract_subjects(paragraphs)
+    )
+    queries_by_paragraph = build_stock_queries_by_paragraph(
+        subjects, paragraphs, template.sub_periods
+    )
 
     semaphore = asyncio.Semaphore(max_concurrency)
     completed = 0
@@ -95,6 +116,7 @@ async def _run_generation(
                 system_prompt, user_prompt, paragraph_text, len(pairs)
             )
 
+        paragraph_stock_queries = queries_by_paragraph.get(index + 1, [])
         pairs_for_paragraph: list[GeneratedPair] = []
         for position, item in enumerate(parsed.pairs[: len(pairs)], start=1):
             final_item = apply_deterministic_suffixes(item, template)
@@ -104,7 +126,7 @@ async def _run_generation(
                     pair_number=position,
                     img=final_item.img,
                     vid=final_item.vid,
-                    stock_queries=parsed.stock_queries,
+                    stock_queries=paragraph_stock_queries,
                     paragraph_text=paragraph_text,
                 )
             )
@@ -155,6 +177,9 @@ class GeminiI2VGenerationService:
         async def update_summary(story_so_far: str, paragraph_text: str) -> str:
             return await self._update_summary(model, story_so_far, paragraph_text)
 
+        async def extract_subjects(paragraphs_: list[str]) -> list[ExtractedSubject]:
+            return await self._extract_subjects(model, paragraphs_, template)
+
         return await _run_generation(
             template=template,
             pairs=pairs,
@@ -162,6 +187,7 @@ class GeminiI2VGenerationService:
             on_progress=on_progress,
             generate_paragraph=generate_paragraph,
             update_summary=update_summary,
+            extract_subjects=extract_subjects,
             max_concurrency=self._max_concurrency,
         )
 
@@ -223,6 +249,21 @@ class GeminiI2VGenerationService:
         parsed = SummaryResponse.model_validate_json(response.text or "{}")
         return parsed.summary
 
+    async def _extract_subjects(
+        self, model: str, paragraphs: list[str], template: I2VPrompt
+    ) -> list[ExtractedSubject]:
+        response = await self._client.aio.models.generate_content(
+            model=model,
+            contents=build_subject_extraction_prompt(paragraphs, template),
+            config=genai_types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=SubjectExtractionResponse,
+                temperature=0,
+            ),
+        )
+        parsed = SubjectExtractionResponse.model_validate_json(response.text or "{}")
+        return parsed.subjects
+
 
 def _temperature_for(model: str, value: float) -> float | Omit:
     # gpt-5.x models only accept the default temperature (1) and reject any
@@ -265,6 +306,9 @@ class OpenAII2VGenerationService:
         async def update_summary(story_so_far: str, paragraph_text: str) -> str:
             return await self._update_summary(model, story_so_far, paragraph_text)
 
+        async def extract_subjects(paragraphs_: list[str]) -> list[ExtractedSubject]:
+            return await self._extract_subjects(model, paragraphs_, template)
+
         return await _run_generation(
             template=template,
             pairs=pairs,
@@ -272,6 +316,7 @@ class OpenAII2VGenerationService:
             on_progress=on_progress,
             generate_paragraph=generate_paragraph,
             update_summary=update_summary,
+            extract_subjects=extract_subjects,
             max_concurrency=self._max_concurrency,
         )
 
@@ -356,6 +401,31 @@ class OpenAII2VGenerationService:
         content = response.choices[0].message.content or "{}"
         parsed = SummaryResponse.model_validate_json(content)
         return parsed.summary
+
+    async def _extract_subjects(
+        self, model: str, paragraphs: list[str], template: I2VPrompt
+    ) -> list[ExtractedSubject]:
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "subject_extraction_response",
+                "schema": subject_extraction_schema(),
+                "strict": True,
+            },
+        }
+        messages = cast(
+            "list[ChatCompletionMessageParam]",
+            [{"role": "user", "content": build_subject_extraction_prompt(paragraphs, template)}],
+        )
+        response = await self._client.chat.completions.create(
+            model=model,
+            messages=messages,
+            response_format=cast("Any", response_format),
+            temperature=_temperature_for(model, 0),
+        )
+        content = response.choices[0].message.content or "{}"
+        parsed = SubjectExtractionResponse.model_validate_json(content)
+        return parsed.subjects
 
 
 class RoutingI2VGenerationService:

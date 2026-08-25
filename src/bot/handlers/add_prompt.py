@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from aiogram import Bot, F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -63,6 +65,7 @@ async def _parse_and_save(
         "Parsing i2v brief, {} chars: {!r}...{!r}", len(raw_text), raw_text[:80], raw_text[-80:]
     )
     parsed = await prompt_parser_service.parse_i2v(raw_text)
+    parsed.title = Path(document.file_name).stem if document.file_name else ""
     saved = await prompt_storage_service.save_i2v(parsed)
     logger.info(
         "add_prompt: saved id={} title={!r} pairs={}",

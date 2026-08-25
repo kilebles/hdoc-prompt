@@ -11,9 +11,7 @@ from pydantic import BaseModel, Field
 from bot.models.prompt import I2VPrompt, Pair, SubPeriod
 
 MIN_PAIR_TEXT_LENGTH = 40
-MIN_STOCK_QUERY_WORDS = 3
-MAX_STOCK_QUERY_WORDS = 6
-STOCK_QUERY_COUNT = 3
+MAX_STOCK_QUERIES_PER_PARAGRAPH = 3
 YEAR_PATTERN = re.compile(r"\b(1[0-9]{3}|20[0-9]{2})\b")
 
 SYSTEM_OVERRIDE = (
@@ -103,48 +101,6 @@ def build_system_prompt(template: I2VPrompt, pairs: list[Pair]) -> str:
         "paragraph, shot differently per that position's camera/frame/people "
         "guidance:\n" + "\n".join(variations)
     )
-    parts.append(
-        f"STOCK QUERIES: separately from the pairs, also return \"stock_queries\" — "
-        f"exactly {STOCK_QUERY_COUNT} search queries for a stock photo/video site "
-        "(Pixabay-style), for THIS PARAGRAPH as a whole.\n"
-        "Purpose — read this carefully, it drives what makes a good query here: "
-        "the img/vid prompts above are for AI generation, which is inherently "
-        "synthetic and can look fabricated. The stock_queries exist to pull in the "
-        "opposite kind of material — real, physically-existing documentation of "
-        "this culture and era that grounds the piece in fact and that an AI "
-        "generator can't convincingly imitate: genuine period artifacts, tools, "
-        "garments and regalia, dwellings and structures, written records or "
-        "documents, or real archival/museum photographs tied to the specific "
-        "named culture/nation and era of this paragraph. Each of the 3 queries "
-        "should aim at a different one of these (e.g. one at a physical object or "
-        "artifact, one at clothing/material culture, one at a structure/setting or "
-        "archival photograph) — not 3 versions of the same generic scenery.\n"
-        "Register: plain English keywords, subject first, no camera terms, no "
-        "lighting/mood/artistic language, no full sentences.\n"
-        f"Length: {MIN_STOCK_QUERY_WORDS}-{MAX_STOCK_QUERY_WORDS} words each — a "
-        "bare 2-word query like \"desert plant\" is too thin to be findable or "
-        "targeted, it must read as a specific, searchable subject: pair the object "
-        "itself with a qualifier that narrows it down, such as the named culture/"
-        "nation, era/period, or material/craft (e.g. \"Apache woven water basket\", "
-        "\"19th century Native American beadwork\", \"adobe pueblo dwelling "
-        "Southwest\").\n"
-        "Every query must stay doubly relevant: (1) to what THIS PARAGRAPH "
-        "actually describes — real objects/artifacts/settings it mentions or "
-        "implies, not a generic stand-in — and (2) to the era/setting given for "
-        "this paragraph (see ERA FOR THIS PARAGRAPH in the user message) and to "
-        "the scenario's overall lore/time period, so a search on a stock site "
-        "returns visuals from the right time, place, and culture, not modern-"
-        "looking stock photos. Generalize away anything a stock library won't "
-        "have footage of — specific names, exact years, invented places — down to "
-        "the closest generic visual category, but never generalize away the era, "
-        "setting, or named culture itself, and never drop into event/action "
-        "framing (a ceremony, a battle, a march) or abstract/conceptual framing "
-        "(\"survival knowledge\", \"cultural wisdom\", \"traditional skill\") — "
-        "neither has a physical form a camera can capture, so both searches mostly "
-        "return illustrations and AI-generated art instead of the real "
-        "documentation this is meant to provide. Every query must name a "
-        "tangible, physical thing."
-    )
 
     return "\n\n".join(parts)
 
@@ -166,8 +122,7 @@ def build_user_prompt(
         parts.append(
             f"ERA FOR THIS PARAGRAPH (already determined, do not second-guess it): "
             f"{matched_period.title} ({matched_period.when}). Open the image prompt by "
-            f"declaring this era, then match material culture, dress, and setting to it "
-            "— and bake this same era into the stock_queries too."
+            f"declaring this era, then match material culture, dress, and setting to it."
         )
     else:
         parts.append(
@@ -179,6 +134,125 @@ def build_user_prompt(
     return "\n\n".join(parts)
 
 
+SUBJECT_EXTRACTION_INSTRUCTION = (
+    "You will read an entire scenario below, paragraph by paragraph (numbered). "
+    "For each paragraph, extract concrete, physically real, photographable SUBJECTS "
+    "for stock photo/video search — things a documentary photographer could point a "
+    "camera at today and capture a real, existing example of.\n"
+    "\n"
+    "Allowed subject types ONLY:\n"
+    "- a specific physical artifact, tool, weapon, container, or instrument (e.g. "
+    "\"woven willow water basket\", \"flint-tipped hunting spear\")\n"
+    "- a garment, regalia, or piece of clothing/adornment (e.g. \"fringed buckskin "
+    "dress\", \"turquoise bead necklace\")\n"
+    "- a structure or dwelling — the built structure itself, not the land around it "
+    "(e.g. \"adobe pueblo wall\", \"hide tipi frame\")\n"
+    "- a written record, symbol, or document (e.g. \"painted hide pictograph\")\n"
+    "- a person described specifically enough to search for by role, appearance, or "
+    "attire — NEVER by name, named individuals return nothing on stock sites (e.g. "
+    "\"elder Apache woman grinding corn\", \"young warrior in buckskin leggings\")\n"
+    "\n"
+    "NEVER extract:\n"
+    "- landscapes, scenery, terrain, sky, weather, or plants/vegetation as a "
+    "backdrop, or any wide natural setting — these carry no documentary value here "
+    "and stock search just returns generic filler\n"
+    "- events, actions, or ceremonies (a battle, a hunt, a ritual, a march)\n"
+    "- abstract or conceptual nouns (\"survival knowledge\", \"tradition\", "
+    "\"resilience\")\n"
+    "- anything not concretely present or clearly implied in that specific "
+    "paragraph's own text\n"
+    "\n"
+    "Anti-anachronism rule, critical: NEVER substitute a historical object with the "
+    "name of its closest modern equivalent or a generic household item (e.g. do not "
+    "call a hide-smoothing stone an \"iron\", do not call a woven carrying frame a "
+    "\"backpack\") — a modern word for an old object pulls modern products from stock "
+    "search instead of historical material culture. If you don't know the precise "
+    "historical term, describe the object by its material, shape, and function "
+    "instead (e.g. \"smooth river stone tool\", not \"iron\").\n"
+    "\n"
+    "For each subject also give `era` — a short era/culture qualifier (e.g. \"Apache "
+    "Southwest, pre-1850\", \"Plains tribes, 19th century\") — derived from that "
+    "paragraph's own context and the overall scenario lore, never an invented date.\n"
+    "\n"
+    f"At most {MAX_STOCK_QUERIES_PER_PARAGRAPH} subjects per paragraph. Fewer is "
+    "fine, and a paragraph with nothing concrete to extract should contribute zero "
+    "— never force a weak or invented entry just to fill the quota."
+)
+
+
+def build_subject_extraction_prompt(paragraphs: list[str], template: I2VPrompt) -> str:
+    numbered = "\n\n".join(
+        f'PARAGRAPH {i}: "{text}"' for i, text in enumerate(paragraphs, start=1)
+    )
+    parts = [SUBJECT_EXTRACTION_INSTRUCTION]
+    if template.lore:
+        parts.append(f"SCENARIO LORE (for era/culture context): {template.lore}")
+    parts.append(numbered)
+    return "\n\n---\n\n".join(parts)
+
+
+class ExtractedSubject(BaseModel):
+    paragraph_number: int = 0
+    subject: str = ""
+    era: str = ""
+
+
+class SubjectExtractionResponse(BaseModel):
+    subjects: list[ExtractedSubject] = Field(default_factory=list)
+
+
+def subject_extraction_schema() -> dict[str, object]:
+    return {
+        "type": "object",
+        "properties": {
+            "subjects": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "paragraph_number": {"type": "integer"},
+                        "subject": {"type": "string"},
+                        "era": {"type": "string"},
+                    },
+                    "required": ["paragraph_number", "subject", "era"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["subjects"],
+        "additionalProperties": False,
+    }
+
+
+def build_stock_queries_by_paragraph(
+    subjects: list[ExtractedSubject],
+    paragraphs: list[str],
+    sub_periods: list[SubPeriod],
+) -> dict[int, list[str]]:
+    """Turns extracted subjects into final stock-search query strings, grouped by
+    paragraph number.
+
+    Era is resolved deterministically from the paragraph's matched sub-period
+    (the same code-level lookup used for image/video generation) whenever one
+    is available, rather than trusted from the model's own `era` field —
+    guarantees the query text can never drift to the wrong era the way
+    free-form per-paragraph generation used to.
+    """
+    queries: dict[int, list[str]] = {}
+    for item in subjects:
+        subject = item.subject.strip()
+        index = item.paragraph_number - 1
+        if not subject or index < 0 or index >= len(paragraphs):
+            continue
+        matched_period = match_sub_period(paragraphs[index], sub_periods)
+        era = matched_period.title if matched_period is not None else item.era.strip()
+        query = f"{subject}, {era}" if era else subject
+        queries.setdefault(item.paragraph_number, []).append(query)
+    return {
+        number: qs[:MAX_STOCK_QUERIES_PER_PARAGRAPH] for number, qs in queries.items()
+    }
+
+
 class PairResponseItem(BaseModel):
     img: str
     vid: str
@@ -186,7 +260,6 @@ class PairResponseItem(BaseModel):
 
 class ParagraphResponse(BaseModel):
     pairs: list[PairResponseItem] = Field(default_factory=list)
-    stock_queries: list[str] = Field(default_factory=list)
 
 
 def paragraph_response_schema(pair_count: int) -> dict[str, object]:
@@ -212,14 +285,8 @@ def paragraph_response_schema(pair_count: int) -> dict[str, object]:
                     "additionalProperties": False,
                 },
             },
-            "stock_queries": {
-                "type": "array",
-                "minItems": STOCK_QUERY_COUNT,
-                "maxItems": STOCK_QUERY_COUNT,
-                "items": {"type": "string"},
-            },
         },
-        "required": ["pairs", "stock_queries"],
+        "required": ["pairs"],
         "additionalProperties": False,
     }
 
@@ -236,28 +303,6 @@ def validate_paragraph_response(paragraph_text: str, response: ParagraphResponse
             return f"variation {i} image prompt is too short/empty ({len(item.img)} chars)"
         if len(item.vid.strip()) < MIN_PAIR_TEXT_LENGTH:
             return f"variation {i} video prompt is too short/empty ({len(item.vid)} chars)"
-
-    if len(response.stock_queries) != STOCK_QUERY_COUNT:
-        return (
-            f"expected exactly {STOCK_QUERY_COUNT} stock_queries, got "
-            f"{len(response.stock_queries)}"
-        )
-    for i, query in enumerate(response.stock_queries, start=1):
-        stock_words = query.strip().split()
-        if not stock_words:
-            return f"stock query {i} is empty"
-        if len(stock_words) < MIN_STOCK_QUERY_WORDS:
-            return (
-                f"stock query {i} has only {len(stock_words)} word(s) ({query!r}), "
-                f"too thin/generic to be findable — needs at least "
-                f"{MIN_STOCK_QUERY_WORDS} words (object + a culture/era/material "
-                "qualifier)"
-            )
-        if len(stock_words) > MAX_STOCK_QUERY_WORDS:
-            return (
-                f"stock query {i} has {len(stock_words)} words ({query!r}), must be a "
-                "short keyword search, not a sentence"
-            )
 
     paragraph_years = set(YEAR_PATTERN.findall(paragraph_text))
     if not paragraph_years:
