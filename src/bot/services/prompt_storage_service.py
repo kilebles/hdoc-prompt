@@ -2,6 +2,9 @@ import uuid
 from pathlib import Path
 from typing import Protocol
 
+from loguru import logger
+from pydantic import ValidationError
+
 from bot.models.prompt import I2VPrompt, PromptModelType
 from bot.models.saved_prompt import SavedPrompt
 
@@ -33,10 +36,12 @@ class FilePromptStorageService:
         return saved
 
     async def list_all(self) -> list[SavedPrompt]:
-        prompts = [
-            SavedPrompt.model_validate_json(path.read_text(encoding="utf-8"))
-            for path in self._directory.glob("*.json")
-        ]
+        prompts = []
+        for path in self._directory.glob("*.json"):
+            try:
+                prompts.append(SavedPrompt.model_validate_json(path.read_text(encoding="utf-8")))
+            except ValidationError:
+                logger.warning(f"Skipping unreadable prompt file: {path}")
         return sorted(prompts, key=lambda p: p.data.title.casefold())
 
     async def get(self, prompt_id: str) -> SavedPrompt | None:
