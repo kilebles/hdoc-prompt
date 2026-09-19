@@ -1,7 +1,8 @@
+import time
 from pathlib import Path
 
 from aiogram import Bot, F, Router
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
@@ -35,6 +36,11 @@ from bot.texts.ru import (
 )
 
 router = Router(name="i2v")
+
+# Minimum gap between progress-message edits. Paragraphs complete in bursts
+# (a dozen per second), and Telegram flood-controls EditMessageText well
+# below that rate; the final edit is always sent regardless of the gap.
+PROGRESS_EDIT_INTERVAL_SECONDS = 2.0
 
 
 @router.message(Command("i2v"))
@@ -181,13 +187,21 @@ async def on_scenario_document(
     pairs = prompt.data.pairs[:pair_count]
     status = await message.answer(scenario_progress(0, len(paragraphs)))
 
+    last_edit_at = 0.0
+
     async def on_progress(done: int, total: int) -> None:
+        nonlocal last_edit_at
         logger.info("i2v: paragraph {}/{} processed", done, total)
+        now = time.monotonic()
+        if done < total and now - last_edit_at < PROGRESS_EDIT_INTERVAL_SECONDS:
+            return
+        last_edit_at = now
         try:
             await status.edit_text(scenario_progress(done, total))
-        except TelegramBadRequest:
-            # e.g. "message is not modified" if progress text happens to repeat.
-            logger.debug("Progress message edit rejected by Telegram, ignoring")
+        except TelegramAPIError as exc:
+            # Progress is cosmetic: a rejected edit ("message is not modified",
+            # flood control RetryAfter, ...) must never abort the generation.
+            logger.warning("Progress message edit failed, ignoring: {}", exc)
 
     logger.info(
         "i2v: starting generation prompt={} model={} pairs={} paragraphs={}",
