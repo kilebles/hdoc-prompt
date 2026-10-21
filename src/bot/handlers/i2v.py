@@ -210,9 +210,19 @@ async def on_scenario_document(
         len(pairs),
         len(paragraphs),
     )
-    generated = await i2v_generation_service.generate(
-        prompt.data, pairs, paragraphs, model, on_progress
-    )
+    try:
+        generated = await i2v_generation_service.generate(
+            prompt.data, pairs, paragraphs, model, on_progress
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.opt(exception=exc).error("i2v: generation failed")
+        try:
+            await status.edit_text(
+                f"Ошибка при генерации ({type(exc).__name__}): {exc}\nПопробуйте отправить файл ещё раз."
+            )
+        except TelegramAPIError:
+            pass
+        return
 
     workbook_bytes = xlsx_export_service.build_i2v_workbook(generated)
     input_stem = Path(document.file_name).stem

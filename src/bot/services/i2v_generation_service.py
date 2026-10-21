@@ -3,6 +3,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any, Protocol, cast
 
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types as genai_types
 from loguru import logger
 from openai import AsyncOpenAI, Omit, omit
@@ -191,6 +192,40 @@ class GeminiI2VGenerationService:
             max_concurrency=self._max_concurrency,
         )
 
+    async def _call_gemini(
+        self,
+        model: str,
+        contents: str,
+        config: genai_types.GenerateContentConfig,
+    ) -> genai_types.GenerateContentResponse:
+        max_attempts = 5
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return await self._client.aio.models.generate_content(
+                    model=model, contents=contents, config=config
+                )
+            except genai_errors.APIError as exc:
+                is_transient = isinstance(exc, genai_errors.ServerError) or exc.code in (
+                    429,
+                    500,
+                    502,
+                    503,
+                    504,
+                )
+                if not is_transient or attempt == max_attempts:
+                    raise
+                delay = min(2.0 * (2 ** (attempt - 1)), 20.0)
+                logger.warning(
+                    "i2v: transient Gemini error (code={}, attempt {}/{}), retrying in {:.1f}s — {}",
+                    exc.code,
+                    attempt,
+                    max_attempts,
+                    delay,
+                    exc,
+                )
+                await asyncio.sleep(delay)
+        raise RuntimeError("unreachable")
+
     async def _generate_paragraph(
         self,
         model: str,
@@ -208,7 +243,7 @@ class GeminiI2VGenerationService:
         prompt = user_prompt
         parsed = ParagraphResponse()
         for attempt in range(1, 4):  # 1 initial attempt + up to 2 retries
-            response = await self._client.aio.models.generate_content(
+            response = await self._call_gemini(
                 model=model, contents=f"{system_prompt}\n\n---\n\n{prompt}", config=config
             )
             parsed = ParagraphResponse.model_validate_json(response.text or "{}")
@@ -237,7 +272,7 @@ class GeminiI2VGenerationService:
         return parsed
 
     async def _update_summary(self, model: str, story_so_far: str, paragraph_text: str) -> str:
-        response = await self._client.aio.models.generate_content(
+        response = await self._call_gemini(
             model=model,
             contents=build_summary_prompt(story_so_far, paragraph_text),
             config=genai_types.GenerateContentConfig(
@@ -252,7 +287,7 @@ class GeminiI2VGenerationService:
     async def _extract_subjects(
         self, model: str, paragraphs: list[str], template: I2VPrompt
     ) -> list[ExtractedSubject]:
-        response = await self._client.aio.models.generate_content(
+        response = await self._call_gemini(
             model=model,
             contents=build_subject_extraction_prompt(paragraphs, template),
             config=genai_types.GenerateContentConfig(
