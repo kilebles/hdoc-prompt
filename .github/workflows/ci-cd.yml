@@ -1,0 +1,49 @@
+name: CI / CD
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  check:
+    name: Python Check & Import Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies & compile check
+        run: |
+          uv sync --frozen
+          uv run python -m compileall -q src main.py
+
+  deploy-linux:
+    name: Deploy to Linux (89.127.192.164)
+    needs: check
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && secrets.DEPLOY_SSH_KEY != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy /opt/hdoc-prompts via SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.DEPLOY_HOST || '89.127.192.164' }}
+          SSH_USER: ${{ secrets.DEPLOY_USER || 'root' }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+          ssh "$SSH_USER@$SSH_HOST" '
+            set -e
+            cd /opt/hdoc-prompts
+            git fetch origin
+            git reset --hard origin/HEAD
+            docker compose up -d --build
+          '
