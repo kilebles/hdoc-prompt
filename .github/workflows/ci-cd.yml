@@ -27,20 +27,26 @@ jobs:
   deploy-linux:
     name: Deploy to Linux (89.127.192.164)
     needs: check
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && secrets.DEPLOY_SSH_KEY != ''
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
     steps:
       - name: Deploy /opt/hdoc-prompts via SSH
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          SSH_HOST: ${{ secrets.DEPLOY_HOST || '89.127.192.164' }}
-          SSH_USER: ${{ secrets.DEPLOY_USER || 'root' }}
+          SSH_HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_USER }}
         run: |
+          if [ -z "$SSH_KEY" ]; then
+            echo "DEPLOY_SSH_KEY secret is not configured yet — skipping automatic SSH deploy."
+            exit 0
+          fi
+          HOST="${SSH_HOST:-89.127.192.164}"
+          USER="${SSH_USER:-root}"
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
-          ssh "$SSH_USER@$SSH_HOST" '
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+          ssh "$USER@$HOST" '
             set -e
             cd /opt/hdoc-prompts
             git fetch origin
