@@ -7,6 +7,7 @@ result.json (для сайта):
     {"project": {...}, "brief": {...}, "rows": [ROW, ...], "summary": {...}}
     ROW = {"number": "12.3", "paragraph_n": 12, "scene_n": 3, "shot": "ENVIRONMENT REACTION SHOT",
            "img": "<готовый промпт картинки>", "vid": "<готовый промпт видео>",
+           "scene_img": "<часть, которую написала модель>", "scene_vid": "…",
            "stock": ["<запрос>", ...]   — только у первой сцены абзаца,
            "paragraph": "<текст абзаца>", "problems": [...], "flags": [...]}
 
@@ -35,15 +36,19 @@ from .config import read_json, write_json
 COLUMNS = ["number", "img_prompt", "vid_prompt", "stock_query_1", "stock_query_2", "stock_query_3", "paragraph"]
 
 
-def rows(paragraphs: list[str], brief: dict[str, Any], scenes_dir: Path) -> list[dict[str, Any]]:
+def rows(paragraphs: list[str], brief: dict[str, Any], scenes_dir: Path, partial: bool = False) -> list[dict[str, Any]]:
+    """Строки результата. partial=True — только готовые абзацы (для показа по ходу генерации)."""
     out = []
     for n, text in enumerate(paragraphs, 1):
         rec = read_json(scenes_dir / f"{n}.json") or {}
+        if partial and not rec.get("final"):
+            continue
         shots = rec.get("shots") or []
         scenes = rec.get("scenes") or []
         stock = br.stock_queries(brief, n)
         if not scenes:  # абзац так и не получил сцен — строка-заглушка, чтобы нумерация не сбилась
             out.append({"number": f"{n}.1", "paragraph_n": n, "scene_n": 1, "shot": "", "img": "", "vid": "",
+                        "scene_img": "", "scene_vid": "",
                         "stock": stock, "paragraph": text, "problems": rec.get("problems") or ["нет ответа"],
                         "flags": []})
             continue
@@ -53,7 +58,9 @@ def rows(paragraphs: list[str], brief: dict[str, Any], scenes_dir: Path) -> list
             mine = [p for p in problems if p.startswith(f"{n}.{i} ")] + (whole if i == 1 else [])
             out.append({"number": f"{n}.{i}", "paragraph_n": n, "scene_n": i,
                         "shot": shots[i - 1] if i - 1 < len(shots) else "",
-                        "img": sc.get("img", ""), "vid": sc.get("vid", ""), "stock": stock if i == 1 else [],
+                        "img": sc.get("img", ""), "vid": sc.get("vid", ""),
+                        "scene_img": sc.get("scene_img", ""), "scene_vid": sc.get("scene_vid", ""),
+                        "stock": stock if i == 1 else [],
                         "paragraph": text, "problems": mine,
                         "flags": [f for f in rec.get("flags") or [] if f.startswith(f"{n}.{i} ")]})
     return out

@@ -15,6 +15,7 @@ from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from promptgen import export
 from promptgen import project as prj
 from promptgen import templates as tpl
 from promptgen.backends import STAGES, list_backends
@@ -32,6 +33,12 @@ def _client() -> ScenarioClient:
 
 
 # ------------------------------------------------------------------ справочники ---
+@router.get("/health")
+def health() -> dict[str, Any]:
+    """То же, что /health, но под /api/prompts — так страница достаёт его через Caddy."""
+    return {"status": "ok", "worker_online": worker_online()}
+
+
 @router.get("/options")
 def options() -> dict[str, Any]:
     cfg = load_config()
@@ -255,10 +262,17 @@ def brief_put(pid: str, body: dict[str, Any]) -> dict[str, Any]:
 
 @router.get("/projects/{pid}/result")
 def result(pid: str) -> dict[str, Any]:
-    r = read_json(prj.pdir(pid) / "result.json")
-    if not r:
+    """Готовый результат; пока проект в работе — уже готовые абзацы (partial: true)."""
+    d = prj.pdir(pid)
+    r = read_json(d / "result.json")
+    if r:
+        return {**r, "partial": False}
+    brief = read_json(d / "brief.json")
+    if not brief:
         raise prj.ProjectError("not_found", "Результата ещё нет")
-    return r
+    paragraphs = read_json(d / "paragraphs.json") or []
+    items = export.rows(paragraphs, brief, d / "scenes", partial=True)
+    return {"rows": items, "brief": brief, "summary": export.summary(items, paragraphs), "partial": True}
 
 
 @router.get("/projects/{pid}/log")

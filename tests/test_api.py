@@ -58,7 +58,7 @@ def test_template_upload_and_project_from_scenario(client):
     v = client.get(f"/api/prompts/projects/{p['id']}", headers=H).json()
     assert v["status"] == "done", v["error"]
     res = client.get(f"/api/prompts/projects/{p['id']}/result", headers=H).json()
-    assert res["summary"]["scenes"] == 2 * len(script_paragraphs())
+    assert res["summary"]["scenes"] == 2 * len(script_paragraphs()) and res["partial"] is False
     xlsx = next(f for f in v["files"] if f["name"].endswith(".xlsx"))
     f = client.get(f"/api/prompts/projects/{p['id']}/files/{xlsx['name']}", headers=H)
     assert f.status_code == 200 and f.content[:2] == b"PK"

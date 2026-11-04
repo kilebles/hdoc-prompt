@@ -93,6 +93,9 @@ def test_review_brief_then_launch_and_edit(templates_ready):
     worker.run_projects_once()
     res = json.loads((prj.pdir(p["id"]) / "result.json").read_text(encoding="utf-8"))
     assert "plain grey walking out dress" in res["rows"][0]["img"]
+    prj.rebrief(p["id"])
+    v = prj.view(prj.load(p["id"]))
+    assert v["files"] == [] and not v["has_brief"] and v["summary"] is None
 
 
 def test_passport_base_uses_builtin_template(templates_ready):
@@ -137,6 +140,11 @@ def test_stop_and_resume_continue_from_saved(templates_ready, monkeypatch):
     assert st["status"] == "stopped"
     done_before = len(list((prj.pdir(p["id"]) / "scenes").glob("*.json")))
     assert 0 < done_before < len(script_paragraphs())
+    from promptgen import export
+
+    part = export.rows(script_paragraphs(), json.loads((prj.pdir(p["id"]) / "brief.json").read_text(encoding="utf-8")),
+                       prj.pdir(p["id"]) / "scenes", partial=True)
+    assert part and len({r["paragraph_n"] for r in part}) == done_before
     monkeypatch.setattr(Generator, "_batch", orig)
     prj.resume(p["id"])
     worker.run_projects_once()

@@ -139,20 +139,28 @@ def launch(pid: str) -> dict[str, Any]:
         raise ProjectError("busy", "Проект уже в работе")
     if not (pdir(pid) / "brief.json").exists():
         raise ProjectError("missing", "Брифа ещё нет")
-    if p["status"] == "done":  # пересобрать: старые сцены убираем
-        shutil.rmtree(pdir(pid) / "scenes", ignore_errors=True)
-    return change(pid, status="queued", stop=False, error="", queued_at=_now(), launched=True)
+    if p["status"] == "done":  # пересобрать: старые сцены и файлы убираем
+        _clear_results(pid)
+    return change(pid, status="queued", stop=False, error="", queued_at=_now(), launched=True, summary=None)
+
+
+def _clear_results(pid: str) -> None:
+    d = pdir(pid)
+    for name in ("scenes", "output"):
+        shutil.rmtree(d / name, ignore_errors=True)
+    f = d / "result.json"
+    if f.exists():
+        f.unlink()
 
 
 def rebrief(pid: str, notes: str | None = None) -> dict[str, Any]:
     p = load(pid)
     if p["status"] in ACTIVE:
         raise ProjectError("busy", "Проект уже в работе")
-    for name in ("brief.json", "result.json"):
-        f = pdir(pid) / name
-        if f.exists():
-            f.unlink()
-    shutil.rmtree(pdir(pid) / "scenes", ignore_errors=True)
+    f = pdir(pid) / "brief.json"
+    if f.exists():
+        f.unlink()
+    _clear_results(pid)
     fields: dict[str, Any] = {"status": "queued", "stop": False, "error": "", "queued_at": _now(),
                               "launched": not p.get("review_brief"), "summary": None}
     if notes is not None:
