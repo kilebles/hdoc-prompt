@@ -169,12 +169,13 @@ class ProjectCreate(BaseModel):
     model: str = ""
     models: dict[str, str] = Field(default_factory=dict)
     review_brief: bool = False
+    project_id: str | None = None  # «ролик» сайта
     script: ScriptRef
 
 
 @router.get("/projects")
-def projects() -> list[dict[str, Any]]:
-    return prj.list_all()
+def projects(project_id: str = "") -> list[dict[str, Any]]:
+    return prj.list_all(project_id=project_id or None)
 
 
 @router.post("/projects", status_code=201)
@@ -199,7 +200,8 @@ def project_create(body: ProjectCreate) -> dict[str, Any]:
             pass
     p = prj.new_project(title=body.title, niche=body.niche, niche_name=niche_name, mode=body.mode, base=body.base,
                         pairs=body.pairs, notes=body.notes, model=body.model, models=body.models,
-                        review_brief=body.review_brief, script=script, paragraphs=paragraphs)
+                        review_brief=body.review_brief, script=script, paragraphs=paragraphs,
+                        project_id=body.project_id)
     return prj.view(p)
 
 

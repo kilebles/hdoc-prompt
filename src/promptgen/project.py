@@ -85,7 +85,7 @@ def log(pid: str, kind: str, text: str) -> None:
 # ======================================================================= создание
 def new_project(*, title: str, niche: str, niche_name: str, mode: str, base: str, pairs: int, notes: str,
                 model: str, models: dict[str, str] | None, review_brief: bool, script: dict[str, Any],
-                paragraphs: list[str]) -> dict[str, Any]:
+                paragraphs: list[str], project_id: str | None = None) -> dict[str, Any]:
     if mode not in ("regular", "avatar"):
         raise ProjectError("bad_request", "Режим: regular или avatar")
     if base not in ("template", "passport"):
@@ -99,6 +99,7 @@ def new_project(*, title: str, niche: str, niche_name: str, mode: str, base: str
     write_json(d / "template.json", {k: template.get(k) for k in ("kind", "name", "builtin", "text", "analysis")})
     p = {
         "id": pid, "title": title or script.get("title") or "Без названия", "created": _now(),
+        "project_id": project_id or None,  # «ролик» на сайте: список фильтруется по нему
         "niche": niche, "niche_name": niche_name, "mode": mode, "base": base,
         "pairs": len(shots), "shots": [s["title"] for s in shots], "notes": notes, "model": model,
         "models": models or {}, "review_brief": bool(review_brief), "launched": not review_brief,
@@ -219,14 +220,14 @@ def stages(p: dict[str, Any]) -> list[dict[str, Any]]:
     return res
 
 
-def list_all(limit: int = 200) -> list[dict[str, Any]]:
+def list_all(limit: int = 200, project_id: str | None = None) -> list[dict[str, Any]]:
     root = projects_dir()
     if not root.exists():
         return []
     items = []
     for f in root.glob("*/project.json"):
         p = read_json(f)
-        if p:
+        if p and (not project_id or p.get("project_id") == project_id):
             items.append(p)
     items.sort(key=lambda x: x.get("created") or "", reverse=True)
     return [view(p) for p in items[:limit]]

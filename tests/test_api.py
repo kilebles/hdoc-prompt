@@ -47,11 +47,13 @@ def test_template_upload_and_project_from_scenario(client):
     assert [s["id"] for s in scripts] == ["abc123"]  # черновики не показываем
     r = client.post("/api/prompts/projects", headers=H, json={
         "niche": "victorian", "mode": "avatar", "base": "template", "notes": "No children on screen.",
-        "script": {"source": "project", "id": "abc123"}})
+        "project_id": "roll-1", "script": {"source": "project", "id": "abc123"}})
     assert r.status_code == 201, r.text
     p = r.json()
     assert p["script"]["count"] == len(script_paragraphs()) and p["niche_name"] == "Victorian London"
     assert p["status"] == "queued" and p["stages"][0]["state"] == "todo"
+    assert [x["id"] for x in client.get("/api/prompts/projects?project_id=roll-1", headers=H).json()] == [p["id"]]
+    assert client.get("/api/prompts/projects?project_id=other", headers=H).json() == []
     worker.run_projects_once()
     v = client.get(f"/api/prompts/projects/{p['id']}", headers=H).json()
     assert v["status"] == "done", v["error"]
