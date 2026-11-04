@@ -150,3 +150,18 @@ def test_sse_reports_project_change(client):
 
     seen = asyncio.run(collect())
     assert "project.changed" in seen and pid in seen
+
+
+def test_cyrillic_and_malformed_niche_slugs_do_not_break_niches(client, monkeypatch):
+    from promptgen import sources
+
+    monkeypatch.setattr(sources.ScenarioClient, "niches", lambda self: [
+        {"slug": "victorian", "name": "Victorian London", "description": "", "has_passport": True},
+        {"slug": "древний-рим-v2", "name": "Древний Рим", "description": "", "has_passport": False},
+        {"slug": "../bad/slug", "name": "Bad", "description": "", "has_passport": False},
+        {"slug": "UpperCase", "name": "Upper", "description": "", "has_passport": False},
+    ])
+    r = client.get("/api/prompts/niches", headers=H)
+    assert r.status_code == 200
+    slugs = [n["slug"] for n in r.json()["niches"]]
+    assert slugs == ["victorian", "древний-рим-v2"]

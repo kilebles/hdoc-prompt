@@ -57,13 +57,15 @@ def niches() -> dict[str, Any]:
     error = ""
     try:
         for n in _client().niches():
-            items[n["slug"]] = {**n}
+            if tpl.valid_slug(n.get("slug", "")):
+                items[n["slug"]] = {**n}
     except SourceError as e:
         error = e.message
     root = niches_dir()
     if root.exists():
         for d in sorted(root.iterdir()):
-            if d.is_dir() and d.name not in items and any((d / "templates").glob("*.json")):
+            if (d.is_dir() and tpl.valid_slug(d.name) and d.name not in items
+                    and any((d / "templates").glob("*.json"))):
                 items[d.name] = {"slug": d.name, "name": d.name, "description": "", "has_passport": False}
     for slug, n in items.items():
         n["templates"] = tpl.status(slug)

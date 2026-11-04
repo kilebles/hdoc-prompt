@@ -26,16 +26,20 @@ from .config import DEFAULTS_DIR, niches_dir, read_json, tasks_dir, write_json
 
 KINDS = ("regular", "avatar")
 KIND_LABEL = {"regular": "Обычный", "avatar": "Аватар"}
-SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,80}$")
+SLUG_RE = re.compile(r"^[^\W_][\w-]{0,80}$")
 
 
 class TemplateError(Exception):
     pass
 
 
+def valid_slug(slug: str) -> bool:
+    return bool(slug) and slug == slug.lower() and bool(SLUG_RE.match(slug))
+
+
 # ======================================================================= хранение
 def _dir(slug: str) -> Path:
-    if not SLUG_RE.match(slug or ""):
+    if not valid_slug(slug):
         raise TemplateError("Неверное имя ниши")
     return niches_dir() / slug / "templates"
 
