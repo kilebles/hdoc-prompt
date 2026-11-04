@@ -1,4 +1,8 @@
-# hdoc-prompts bot
+# fl-prompts
+
+Промпты картинка + видео по сценарию: веб-модуль для сайта Motion Pr (`src/promptgen`, ниже) и Telegram-бот (`src/bot`, запасной вариант).
+
+## Telegram-бот
 
 Telegram-бот на aiogram 3 (polling), многослойная архитектура.
 
@@ -121,7 +125,7 @@ agy должен работать с входом пользователя `foot
 3. Два окна: `start_worker.bat` и `start_api.bat`.
 4. Проверка: `http://127.0.0.1:8040/health` → `"worker_online": true`.
 5. Брандмауэр — порт только для Linux-сервера:
-   `New-NetFirewallRule -DisplayName "hdoc-prompt API 8040" -Direction Inbound -Protocol TCP -LocalPort 8040 -RemoteAddress 89.127.192.164 -Action Allow`
+   `New-NetFirewallRule -DisplayName "fl-prompts API 8040" -Direction Inbound -Protocol TCP -LocalPort 8040 -RemoteAddress 89.127.192.164 -Action Allow`
 6. Caddy на Linux (перед правилом для `/api/*`): `handle /api/prompts/* { reverse_proxy 130.17.13.222:8040 }`
 
 Свои значения настроек — в `config.local.json` рядом с `config.json` (не в git): модели по этапам

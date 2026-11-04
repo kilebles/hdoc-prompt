@@ -34,7 +34,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not secrets.compare_digest(token, settings.api_token):
             raise HTTPException(401, "invalid token")
 
-    app = FastAPI(title="hdoc-prompt", version=__version__)
+    app = FastAPI(title="fl-prompts", version=__version__)
     app.state.settings = settings
     app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"], allow_headers=["*"])
     app.include_router(router, dependencies=[Depends(check_token)])
