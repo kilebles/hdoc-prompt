@@ -8,7 +8,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-DATA = Path(__file__).resolve().parent / "data"
+DATA = Path(__file__).resolve().parent / "fixtures"
 
 FAKE_NICHES = [{"slug": "victorian", "name": "Victorian London", "description": "", "has_profile": True}]
 FAKE_PASSPORT = "Audience: adults 35+. Tone: calm documentary."
