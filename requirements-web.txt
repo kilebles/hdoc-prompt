@@ -1,0 +1,11 @@
+# Модуль промптов для сайта (src/promptgen): API + worker. Python 3.11+.
+# Telegram-бот (src/bot) ставится отдельно через uv по pyproject.toml — эти файлы друг другу не мешают.
+python-docx>=1.1
+openpyxl>=3.1
+httpx>=0.27
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.6
+pydantic-settings>=2.4
+python-multipart>=0.0.9
+truststore>=0.9

@@ -1,0 +1,176 @@
+{
+  "_readme": "Общие настройки модуля промптов (в git). Свои значения для сервера — в config.local.json рядом (не в git): он накладывается поверх этого файла.",
+  "default_backend": "antigravity",
+  "backends": {
+    "antigravity": {
+      "label": "Google Antigravity (подписка Google AI)",
+      "enabled": true,
+      "binary_path": "",
+      "extra_args": [],
+      "models": [
+        {
+          "id": "gemini-4-argon-low",
+          "label": "Gemini 4 Argon (Low)",
+          "word": "argon-low"
+        },
+        {
+          "id": "gemini-4-argon-medium",
+          "label": "Gemini 4 Argon (Medium)",
+          "word": "argon"
+        },
+        {
+          "id": "gemini-4-argon-high",
+          "label": "Gemini 4 Argon (High)",
+          "word": "argon-high"
+        },
+        {
+          "id": "gemini-3.8-flash-low",
+          "label": "Gemini 3.8 Flash (Low)",
+          "word": "flash-low"
+        },
+        {
+          "id": "gemini-3.8-flash-medium",
+          "label": "Gemini 3.8 Flash (Medium)",
+          "word": "flash"
+        },
+        {
+          "id": "gemini-3.8-flash-high",
+          "label": "Gemini 3.8 Flash (High)",
+          "word": "flash-high"
+        },
+        {
+          "id": "claude-sonnet-5-5-low",
+          "label": "Claude Sonnet 5.5 (Low, через Ultra)",
+          "word": "sonnet-low"
+        },
+        {
+          "id": "claude-sonnet-5-5-medium",
+          "label": "Claude Sonnet 5.5 (Medium, через Ultra)",
+          "word": "sonnet"
+        },
+        {
+          "id": "claude-sonnet-5-5-high",
+          "label": "Claude Sonnet 5.5 (High, через Ultra)",
+          "word": "sonnet-high"
+        },
+        {
+          "id": "claude-opus-5-5-low",
+          "label": "Claude Opus 5.5 (Low, через Ultra)",
+          "word": "opus-low"
+        },
+        {
+          "id": "claude-opus-5-5-medium",
+          "label": "Claude Opus 5.5 (Medium, через Ultra)",
+          "word": "opus"
+        },
+        {
+          "id": "claude-opus-5-5-high",
+          "label": "Claude Opus 5.5 (High, через Ultra)",
+          "word": "opus-high"
+        },
+        {
+          "id": "gpt-oss-120b-medium",
+          "label": "GPT-OSS 120B (Medium)",
+          "word": "gpt"
+        }
+      ],
+      "stage_models": {
+        "template": "gemini-4-argon-medium",
+        "brief": "gemini-4-argon-medium",
+        "prompts": "gemini-4-argon-medium"
+      }
+    },
+    "claude": {
+      "label": "Claude Code (подписка Claude)",
+      "enabled": false,
+      "binary_path": "",
+      "config_dir": "",
+      "effort": {
+        "default": "medium"
+      },
+      "env": {},
+      "extra_args": [],
+      "models": [
+        {
+          "id": "opus-low",
+          "label": "Claude Opus (Low)",
+          "word": "claude-opus-low"
+        },
+        {
+          "id": "opus-medium",
+          "label": "Claude Opus (Medium)",
+          "word": "claude-opus"
+        },
+        {
+          "id": "opus-high",
+          "label": "Claude Opus (High)",
+          "word": "claude-opus-high"
+        },
+        {
+          "id": "sonnet-low",
+          "label": "Claude Sonnet (Low)",
+          "word": "claude-sonnet-low"
+        },
+        {
+          "id": "sonnet-medium",
+          "label": "Claude Sonnet (Medium)",
+          "word": "claude-sonnet"
+        },
+        {
+          "id": "sonnet-high",
+          "label": "Claude Sonnet (High)",
+          "word": "claude-sonnet-high"
+        }
+      ],
+      "stage_models": {
+        "template": "sonnet-medium",
+        "brief": "opus-medium",
+        "prompts": "sonnet-medium"
+      },
+      "model_note": "«opus» и «sonnet» — псевдонимы Claude Code: он сам берёт новейшую версию модели (сейчас 5.5), поэтому новые версии подхватываются без правки списка. Уровень (low/medium/high) передаётся флагом --effort; на low размышления выключены (MAX_THINKING_TOKENS=0)."
+    },
+    "fake": {
+      "label": "Тест (без модели)",
+      "enabled": false,
+      "hidden": true,
+      "models": [
+        {
+          "id": "fake",
+          "label": "Тест"
+        }
+      ]
+    }
+  },
+  "parallel": {
+    "antigravity": 3,
+    "claude": 3,
+    "fake": 4
+  },
+  "batch": {
+    "_note": "Сколько сцен просить за один вызов: при 16 парах на абзац — 1 абзац за вызов, при аватаре (2 сцены) — до max_paragraphs_per_call абзацев.",
+    "scenes_per_call": 16,
+    "max_paragraphs_per_call": 8
+  },
+  "brief": {
+    "max_paragraphs_per_call": 150
+  },
+  "checks": {
+    "length_tolerance": 1.25,
+    "length_hard_limit": 1.6,
+    "fix_rounds": 2,
+    "spoken_tolerance": 1.3
+  },
+  "retry": {
+    "max_errors_per_step": 3,
+    "limit_wait_minutes_default": 30,
+    "limit_wait_max_hours": 8
+  },
+  "timeouts": {
+    "call_seconds": 900
+  },
+  "scenario_api": {
+    "_note": "API вкладки «Сценарий» (fl-scenario) на этом же сервере. Токен берётся из .env (API_TOKEN), если здесь пусто.",
+    "url": "http://127.0.0.1:8020",
+    "token": ""
+  }
+}

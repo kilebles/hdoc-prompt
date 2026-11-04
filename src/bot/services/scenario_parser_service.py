@@ -84,7 +84,13 @@ def _is_heading_paragraph(para: Paragraph) -> bool:
     if _word_count(para.text) > _HEADING_MAX_WORDS:
         return False
     runs = [run for run in para.runs if run.text.strip()]
-    return bool(runs) and all(run.bold for run in runs)
+    # A fully bold paragraph is a heading only if it does not read as a sentence: a short bold
+    # narration line ("Silence fell over the square.") must stay in the scenario.
+    return (
+        bool(runs)
+        and all(run.bold for run in runs)
+        and not _SENTENCE_END.search(para.text.strip())
+    )
 
 
 class ScenarioParserService(Protocol):
